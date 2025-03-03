@@ -7,6 +7,7 @@ const Member = require('../models/Member');
 /**
  * Initialize scheduled tasks for updating database
  */
+
 function initScheduledJobs() {
   // Initial data load when server starts
   console.log('Running initial data load...');

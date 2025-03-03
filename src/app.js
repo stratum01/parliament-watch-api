@@ -11,6 +11,8 @@ const { initScheduledJobs } = require('./services/scheduler');
 const billsRoutes = require('./routes/bills');
 const votesRoutes = require('./routes/votes');
 const membersRoutes = require('./routes/members');
+const adminRoutes = require('./routes/admin');
+
 
 // Create Express app
 const app = express();
@@ -54,6 +56,7 @@ app.use(morgan('combined')); // Request logging
 app.use('/api/bills', billsRoutes);
 app.use('/api/votes', votesRoutes);
 app.use('/api/members', membersRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

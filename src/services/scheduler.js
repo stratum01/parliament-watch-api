@@ -130,6 +130,7 @@ async function updateRecentBills() {
       expiresAt.setDate(expiresAt.getDate() + 3);
       
       // Update or create bill in database
+      // Update or create bill in database
       await Bill.findOneAndUpdate(
         { number: billItem.number, session: billItem.session },
         {
@@ -139,7 +140,10 @@ async function updateRecentBills() {
           introduced: new Date(billItem.introduced),
           name: billItem.name,
           legisinfo_id: billItem.legisinfo_id,
-          status: billData.status,
+          // Fix the status field to handle objects
+          status: typeof billData.status === 'object' ? 
+            (billData.status.en || JSON.stringify(billData.status)) : 
+            billData.status,
           sponsor: billData.sponsor_politician_url,
           text_url: billData.text_url,
           law_url: billData.law_url,

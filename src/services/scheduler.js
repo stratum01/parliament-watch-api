@@ -1,4 +1,3 @@
-// services/scheduler.js
 const cron = require('node-cron');
 const { fetchFromAPI, getCacheExpiration } = require('./proxy');
 const Bill = require('../models/Bill');

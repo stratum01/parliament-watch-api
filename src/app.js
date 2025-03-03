@@ -5,7 +5,7 @@ const morgan = require('morgan');
 const path = require('path');
 const helmet = require('helmet');
 const compression = require('compression');
-const { initScheduledJobs } = require('./services/scheduler');
+const { initScheduledJobs } = require('../services/scheduler');
 
 // Import route handlers
 const billsRoutes = require('./routes/bills');

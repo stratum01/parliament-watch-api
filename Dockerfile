@@ -16,5 +16,5 @@ RUN sed -i 's/app.use(cors());/app.use(cors({ origin: "*" }));/' src/app.js
 EXPOSE 8080
 ENV PORT=8080
 
-# Start the server
+# Start the server please
 CMD ["node", "src/server.js"]

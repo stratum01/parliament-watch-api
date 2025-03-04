@@ -12,53 +12,56 @@ const CACHE_TTL = {
 };
 
 /**
- * Makes requests to the OpenParliament API with proper headers
- * @param {string} endpoint - API endpoint to request
+ * Fetch data from OpenParliament API with error handling
+ * @param {string} path - API path to fetch
  * @param {Object} params - Query parameters
- * @returns {Promise<Object>} - Response data
+ * @returns {Promise<Object>} - API response data
  */
-async function fetchFromAPI(endpoint, params = {}) {
-  // Build URL with query parameters
-  const url = new URL(`${API_BASE_URL}${endpoint}`);
-  
-  // Always request JSON format
-  url.searchParams.append('format', 'json');
-  
-  // Add API version parameter
-  url.searchParams.append('version', 'v1');
-  
-  // Add any additional parameters
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
-      url.searchParams.append(key, value);
-    }
-  });
-
-  console.log(`Fetching from OpenParliament API: ${url.toString()}`);
-
+const fetchFromAPI = async (path, params = {}) => {
   try {
-    // Add proper headers including User-Agent with contact email
-    const headers = {
-      'Accept': 'application/json',
-      'User-Agent': 'Parliament-Watch/1.0 (jrfchambers@gmail.com)',
-      'API-Version': 'v1',
-    };
+    // Build URL with query parameters
+    const url = new URL(`${OPENPARLIAMENT_BASE_URL}${path}`);
     
-    // Make the API request
-    const response = await axios.get(url.toString(), { headers });
-    console.log(`Successfully fetched data from ${endpoint}`);
-    return response.data;
-  } catch (error) {
-    console.error(`Error fetching from ${endpoint}:`, error.message);
+    // Always request JSON format
+    url.searchParams.append('format', 'json');
+    url.searchParams.append('version', 'v1');
     
-    if (error.response) {
-      console.error(`API response status: ${error.response.status}`);
-      console.error(`API response data:`, error.response.data);
+    // Add other params
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        url.searchParams.append(key, value);
+      }
+    });
+    
+    console.log(`Fetching from OpenParliament API: ${url.toString()}`);
+    
+    // Make the request with timeout and proper headers
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Parliament Watch/1.0 (https://github.com/yourusername/parliament-watch)'
+      },
+      timeout: 10000 // 10 second timeout
+    });
+    
+    // Check if response is OK
+    if (!response.ok) {
+      const errorText = await response.text().catch(e => 'No error text available');
+      console.error(`API Error ${response.status}: ${errorText}`);
+      throw new Error(`OpenParliament API responded with status ${response.status}`);
     }
     
-    throw new Error(`API request failed: ${error.message}`);
+    // Parse JSON response
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error(`Error fetching from API (${path}):`, error);
+    
+    // Rethrow with more context
+    throw new Error(`Failed to fetch data from OpenParliament API: ${error.message}`);
   }
-}
+};
 
 /**
  * Get cache expiration time based on endpoint type

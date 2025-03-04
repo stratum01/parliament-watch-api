@@ -128,25 +128,53 @@ router.get('/:memberName/votes', async (req, res) => {
     
     // If not in database or expired, fetch from API
     if (!memberVotesData) {
-      const params = { limit, offset };
-      const apiData = await fetchFromAPI(memberVotesUrl, params);
-      
-      // Store in database
-      memberVotesData = new Member({
-        name: `${memberName}-votes`,
-        url: cacheKey,
-        data: apiData,
-        expires: getCacheExpiration(memberVotesUrl)
-      });
-      
-      await memberVotesData.save();
+      try {
+        const params = { limit, offset };
+        const apiData = await fetchFromAPI(memberVotesUrl, params);
+        
+        // Store in database
+        memberVotesData = new Member({
+          name: `${memberName}-votes`,
+          url: cacheKey,
+          data: apiData,
+          expires: getCacheExpiration(memberVotesUrl)
+        });
+        
+        await memberVotesData.save();
+      } catch (apiError) {
+        console.error(`Error fetching votes from OpenParliament for ${memberName}:`, apiError);
+        
+        // Instead of propagating error, return empty result structure
+        return res.json({
+          objects: [],
+          pagination: {
+            count: 0,
+            next_url: null,
+            previous_url: null,
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+          },
+          message: `No votes available for ${memberName} or API error occurred`,
+          error_details: process.env.NODE_ENV === 'development' ? apiError.message : undefined
+        });
+      }
     }
     
     // Return data
     res.json(memberVotesData.data);
   } catch (error) {
-    console.error('Error fetching member votes:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error in member votes endpoint:', error);
+    
+    // Return empty result structure instead of 500 error
+    res.json({
+      objects: [],
+      pagination: {
+        count: 0, 
+        next_url: null,
+        previous_url: null
+      },
+      message: 'Error retrieving votes data'
+    });
   }
 });
 

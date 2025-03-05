@@ -111,7 +111,7 @@ router.get('/:memberName', async (req, res) => {
  * Get ballots for a specific member
  * @route GET /api/members/:memberName/ballots
  */
-router.get('/members/:memberName/ballots', async (req, res) => {
+router.get('/:memberName/ballots', async (req, res) => {
   try {
     const { memberName } = req.params;
     
@@ -220,6 +220,65 @@ router.get('/members/:memberName/ballots', async (req, res) => {
     });
   }
 });
+
+// Just for testing - return mock data for votes
+router.get('/:memberName/mock-votes', (req, res) => {
+  const { memberName } = req.params;
+  
+  // Create mock votes with realistic patterns
+  const mockVotes = [
+    {
+      id: 'mock-1',
+      bill: 'Bill C-56',
+      description: 'Affordable Housing and Public Transit Act',
+      date: '2024-11-20',
+      vote: 'Yea',
+      result: 'Passed'
+    },
+    {
+      id: 'mock-2',
+      bill: 'Motion',
+      description: 'Opposition Motion (Confidence in the government)',
+      date: '2024-11-15',
+      vote: 'Yea',
+      result: 'Passed'
+    },
+    {
+      id: 'mock-3',
+      bill: 'Bill C-45',
+      description: 'Cannabis Regulation Amendment Act',
+      date: '2024-10-28',
+      vote: 'Yea',
+      result: 'Passed'
+    },
+    {
+      id: 'mock-4',
+      bill: 'Bill C-35',
+      description: 'Canada Early Learning and Child Care Act',
+      date: '2024-10-12',
+      vote: 'Nay', 
+      result: 'Passed'
+    },
+    {
+      id: 'mock-5',
+      bill: 'Bill C-63',
+      description: 'Online Streaming Act',
+      date: '2024-09-30',
+      vote: 'Yea',
+      result: 'Passed'
+    },
+  ];
+  
+  res.json({
+    objects: mockVotes,
+    pagination: {
+      count: mockVotes.length,
+      next: null,
+      previous: null
+    }
+  });
+});
+
 
 /**
  * GET /api/members/:memberUrl/votes

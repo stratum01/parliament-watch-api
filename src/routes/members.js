@@ -108,6 +108,120 @@ router.get('/:memberName', async (req, res) => {
 });
 
 /**
+ * Get ballots for a specific member
+ * @route GET /api/members/:memberName/ballots
+ */
+router.get('/members/:memberName/ballots', async (req, res) => {
+  try {
+    const { memberName } = req.params;
+    
+    // Check cache first
+    const cacheKey = `member_ballots_${memberName}`;
+    const cachedData = cache.get(cacheKey);
+    
+    if (cachedData) {
+      console.log(`Returning cached ballots for ${memberName}`);
+      return res.json(cachedData);
+    }
+    
+    // If not in cache, fetch from OpenParliament API
+    console.log(`Fetching ballots for ${memberName} from OpenParliament API`);
+    
+    // Construct API URL
+    const apiUrl = `https://api.openparliament.ca/votes/ballots/?politician=${memberName}&format=json&limit=50`;
+    
+    // Make the request to OpenParliament API
+    const response = await axios.get(apiUrl, {
+      headers: {
+        'User-Agent': 'Parliament Watch/1.0',
+        'Accept': 'application/json'
+      },
+      timeout: 5000 // 5 second timeout
+    });
+    
+    // Get the ballots from the response
+    const ballotsData = response.data;
+    
+    // Check if we got some ballots
+    if (!ballotsData.objects || ballotsData.objects.length === 0) {
+      console.log(`No ballots found for ${memberName}`);
+      return res.status(404).json({ 
+        error: 'No voting history found for this member' 
+      });
+    }
+    
+    // Enrich ballots with vote details (for the first 10 to avoid too many requests)
+    const enrichedBallots = [];
+    const maxBallotsToEnrich = Math.min(10, ballotsData.objects.length);
+    
+    for (let i = 0; i < maxBallotsToEnrich; i++) {
+      const ballot = ballotsData.objects[i];
+      
+      try {
+        // Extract vote ID from vote_url
+        const voteUrlParts = ballot.vote_url.split('/').filter(Boolean);
+        if (voteUrlParts.length >= 3) {
+          const voteSession = voteUrlParts[voteUrlParts.length - 3]; // e.g., "44-1"
+          const voteNumber = voteUrlParts[voteUrlParts.length - 1]; // e.g., "928"
+          
+          // Fetch vote details
+          const voteUrl = `https://api.openparliament.ca/votes/${voteSession}/${voteNumber}/?format=json`;
+          const voteResponse = await axios.get(voteUrl, {
+            headers: {
+              'User-Agent': 'Parliament Watch/1.0',
+              'Accept': 'application/json'
+            },
+            timeout: 5000
+          });
+          
+          const voteData = voteResponse.data;
+          
+          // Add vote details to ballot
+          enrichedBallots.push({
+            ...ballot,
+            vote_details: voteData,
+            date: voteData.date,
+            description: voteData.description,
+            result: voteData.result,
+            bill_number: voteData.bill ? voteData.bill.number : null
+          });
+        } else {
+          // If we can't parse the vote_url, just add the original ballot
+          enrichedBallots.push(ballot);
+        }
+      } catch (error) {
+        console.error(`Error enriching ballot for ${memberName}:`, error.message);
+        // If we can't enrich the ballot, just add the original
+        enrichedBallots.push(ballot);
+      }
+    }
+    
+    // Add any remaining ballots that weren't enriched
+    for (let i = maxBallotsToEnrich; i < ballotsData.objects.length; i++) {
+      enrichedBallots.push(ballotsData.objects[i]);
+    }
+    
+    // Create the response data
+    const responseData = {
+      ...ballotsData,
+      objects: enrichedBallots
+    };
+    
+    // Cache the response for 1 hour (3600000 ms)
+    cache.set(cacheKey, responseData, 3600000);
+    
+    // Send the enriched data
+    res.json(responseData);
+  } catch (error) {
+    console.error('Error fetching member ballots:', error.message);
+    res.status(500).json({ 
+      error: 'Error fetching voting history',
+      details: error.message 
+    });
+  }
+});
+
+/**
  * GET /api/members/:memberUrl/votes
  * Retrieve voting history for a specific member
  */

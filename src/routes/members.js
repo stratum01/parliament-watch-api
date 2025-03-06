@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
+const cache = require('../services/cache');
 const Member = require('../models/Member');
 const { fetchFromAPI, getCacheExpiration } = require('../services/proxy');
 
@@ -104,6 +106,171 @@ router.get('/:memberName', async (req, res) => {
   } catch (error) {
     console.error('Error fetching member details:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get real voting history for a specific member
+ * @route GET /api/members/:memberName/real-votes
+ */
+router.get('/:memberName/real-votes', async (req, res) => {
+  try {
+    const { memberName } = req.params;
+    
+    // Check cache first
+    const cacheKey = `member_real_votes_${memberName}`;
+    const cachedData = cache.get(cacheKey);
+    
+    if (cachedData) {
+      console.log(`Returning cached real votes for ${memberName}`);
+      return res.json(cachedData);
+    }
+    
+    console.log(`Fetching real votes for ${memberName} from OpenParliament API`);
+    
+    // Step 1: Fetch the member's ballots
+    const ballotsUrl = `https://api.openparliament.ca/votes/ballots/?politician=${memberName}&format=json&limit=20`;
+    console.log(`Fetching ballots from: ${ballotsUrl}`);
+    
+    let ballotsData;
+    try {
+      const ballotsResponse = await axios.get(ballotsUrl, {
+        headers: {
+          'User-Agent': 'Parliament Watch/1.0',
+          'Accept': 'application/json'
+        },
+        timeout: 8000
+      });
+      
+      ballotsData = ballotsResponse.data;
+      console.log(`Found ${ballotsData.objects?.length || 0} ballots for ${memberName}`);
+    } catch (ballotsError) {
+      console.error(`Error fetching ballots: ${ballotsError.message}`);
+      return res.status(500).json({
+        error: 'Failed to fetch ballot data',
+        details: ballotsError.message
+      });
+    }
+    
+    if (!ballotsData.objects || ballotsData.objects.length === 0) {
+      console.log(`No ballots found for ${memberName}`);
+      return res.status(404).json({
+        error: 'No voting history found for this member'
+      });
+    }
+    // Step 2: Enrich ballots with vote details (for the first 10 to avoid too many requests)
+    const enrichedVotes = [];
+    const maxBallotsToEnrich = Math.min(10, ballotsData.objects.length);
+    
+    for (let i = 0; i < maxBallotsToEnrich; i++) {
+      const ballot = ballotsData.objects[i];
+      
+      try {
+        // Extract vote session and number from vote_url
+        // Format is typically: /votes/44-1/928/
+        const voteUrlParts = ballot.vote_url.split('/').filter(Boolean);
+        
+        if (voteUrlParts.length >= 3) {
+          const voteSession = voteUrlParts[voteUrlParts.length - 3]; // e.g., "44-1"
+          const voteNumber = voteUrlParts[voteUrlParts.length - 1]; // e.g., "928"
+          
+          // Fetch vote details
+          const voteUrl = `https://api.openparliament.ca/votes/${voteSession}/${voteNumber}/?format=json`;
+          console.log(`Fetching vote details from: ${voteUrl}`);
+          
+          const voteResponse = await axios.get(voteUrl, {
+            headers: {
+              'User-Agent': 'Parliament Watch/1.0',
+              'Accept': 'application/json'
+            },
+            timeout: 5000
+          });
+          
+          const voteData = voteResponse.data;
+          
+          // Format vote data for frontend consumption
+          enrichedVotes.push({
+            id: `${voteSession}-${voteNumber}`,
+            vote_url: ballot.vote_url,
+            bill: voteData.bill ? `Bill ${voteData.bill.number}` : 'Motion',
+            bill_number: voteData.bill ? voteData.bill.number : null,
+            description: typeof voteData.description === 'object' ? 
+              voteData.description.en : voteData.description,
+            date: voteData.date,
+            vote: ballot.ballot === 'Yes' ? 'Yea' : ballot.ballot === 'No' ? 'Nay' : ballot.ballot,
+            result: voteData.result || (voteData.passed ? 'Passed' : 'Failed'),
+            // Include raw data for debugging or future enhancements
+            raw_ballot: ballot,
+            raw_vote: voteData
+          });
+        } else {
+          console.warn(`Invalid vote_url format: ${ballot.vote_url}`);
+          // Add minimal ballot data if we can't parse the URL properly
+          enrichedVotes.push({
+            id: ballot.vote_url,
+            vote_url: ballot.vote_url,
+            bill: 'Unknown',
+            description: 'Vote details unavailable',
+            date: 'Unknown date',
+            vote: ballot.ballot,
+            result: 'Unknown',
+            raw_ballot: ballot
+          });
+        }
+      } catch (voteError) {
+        console.error(`Error fetching vote details for ${ballot.vote_url}: ${voteError.message}`);
+        // Add minimal ballot data if we encounter an error
+        enrichedVotes.push({
+          id: ballot.vote_url,
+          vote_url: ballot.vote_url,
+          bill: 'Unknown',
+          description: 'Error fetching vote details',
+          date: 'Unknown date',
+          vote: ballot.ballot,
+          result: 'Unknown',
+          raw_ballot: ballot,
+          error: voteError.message
+        });
+      }
+    }
+    
+    // Add any remaining ballots with minimal data
+    for (let i = maxBallotsToEnrich; i < ballotsData.objects.length; i++) {
+      const ballot = ballotsData.objects[i];
+      enrichedVotes.push({
+        id: ballot.vote_url,
+        vote_url: ballot.vote_url,
+        bill: 'Motion', // Default to Motion without enrichment
+        description: 'Additional vote (details not loaded)',
+        date: 'Unknown date',
+        vote: ballot.ballot,
+        result: 'Unknown',
+        raw_ballot: ballot
+      });
+    }
+    
+    // Create the response
+    const responseData = {
+      objects: enrichedVotes,
+      pagination: ballotsData.pagination,
+      meta: {
+        member: memberName,
+        enriched_count: maxBallotsToEnrich,
+        total_count: ballotsData.objects.length
+      }
+    };
+    
+    // Cache the response for 1 hour (3600000 ms)
+    cache.set(cacheKey, responseData, 3600000);
+    
+    // Send the enriched data
+    return res.json(responseData);
+  } catch (error) {
+    console.error(`Error in real-votes endpoint: ${error.message}`);
+    return res.status(500).json({
+      error: 'Failed to retrieve voting history',
+      details: error.message
+    });
   }
 });
 
